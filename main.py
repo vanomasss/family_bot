@@ -276,21 +276,25 @@ async def send_daily_reminders():
 async def check_reminders():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     reminders = get_reminders()
+    
     for r in reminders:
         rem_id, user_id, text, remind_time, repeat_type = r
+        
+        # Сравниваем время как строки (формат одинаковый)
         if remind_time <= now:
+            # Отправляем уведомление
             if user_id is None:
                 for uid in FAMILY_IDS.values():
                     await bot.send_message(uid, f"⏰ НАПОМИНАНИЕ ВСЕМ:\n\n{text}")
             else:
                 await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
-
+            
+            # Обрабатываем повтор
             if repeat_type == "once":
                 mark_as_sent(rem_id)
             elif repeat_type == "daily":
-                # Переносим на завтра
-                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime(
-                    "%Y-%m-%d %H:%M")
+                # Переносим на следующий день
+                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
                 conn = sqlite3.connect("reminders.db")
                 cur = conn.cursor()
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
@@ -298,15 +302,13 @@ async def check_reminders():
                 conn.close()
             elif repeat_type == "weekly":
                 # Переносим на неделю
-                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(weeks=1)).strftime(
-                    "%Y-%m-%d %H:%M")
+                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M")
                 conn = sqlite3.connect("reminders.db")
                 cur = conn.cursor()
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
                 conn.commit()
                 conn.close()
-
-
+                
 async def main():
     init_db()
 
