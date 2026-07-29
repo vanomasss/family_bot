@@ -1,6 +1,9 @@
+import os
 import asyncio
 import sqlite3
 from datetime import datetime, timedelta
+from aiohttp import web
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -301,16 +304,40 @@ async def check_reminders():
             conn.close()
 
 
+# --- ФЕЙКОВЫЙ ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    # Render сам выдает нужный порт через переменные окружения
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Фейковый веб-сервер запущен на порту {port}")
+
+
+# --- ГЛАВНАЯ ТОЧКА ВХОДА ---
 async def main():
     init_db()
 
+    # Запускаем планировщик
     scheduler.add_job(check_reminders, "interval", minutes=1)
     scheduler.add_job(send_daily_reminders, "cron", hour=8, minute=0)
     scheduler.start()
 
+    # Запускаем веб-сервер
+    await start_web_server()
+
     print("🌟 Бот запущен!")
     print(f"⏰ Ежедневная рассылка в {DAILY_REMIND_TIME}")
 
+    # Запускаем поллинг бота
     await dp.start_polling(bot)
 
 
