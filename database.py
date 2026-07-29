@@ -1,14 +1,17 @@
 import sqlite3
+import os
 
 DB_NAME = "reminders.db"
 
 def init_db():
+    # Удаляем старую базу, если она есть
+    if os.path.exists(DB_NAME):
+        os.remove(DB_NAME)
+    
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    
-    # Создаём таблицу, если её нет
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
+        CREATE TABLE reminders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             text TEXT,
@@ -18,14 +21,6 @@ def init_db():
             is_sent INTEGER DEFAULT 0
         )
     """)
-    
-    # Пробуем добавить колонку repeat_type, если её ещё нет (для старых баз)
-    try:
-        cur.execute("ALTER TABLE reminders ADD COLUMN repeat_type TEXT DEFAULT 'once'")
-    except sqlite3.OperationalError:
-        # Колонка уже существует — ничего не делаем
-        pass
-    
     conn.commit()
     conn.close()
 
