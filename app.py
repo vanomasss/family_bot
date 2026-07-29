@@ -1,6 +1,6 @@
 from flask import Flask
-from threading import Thread
 from main import main
+import asyncio
 
 app = Flask(__name__)
 
@@ -8,11 +8,9 @@ app = Flask(__name__)
 def home():
     return "Бот работает!"
 
-def run_bot():
-    import asyncio
-    asyncio.run(main())
-
-Thread(target=run_bot).start()
-
 if __name__ == "__main__":
+    # Запускаем бота в отдельном потоке
+    import threading
+    threading.Thread(target=lambda: asyncio.run(main()), daemon=True).start()
+    # Запускаем Flask-сервер
     app.run(host="0.0.0.0", port=10000)
