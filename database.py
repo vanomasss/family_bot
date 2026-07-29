@@ -5,6 +5,8 @@ DB_NAME = "reminders.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
+    
+    # Создаём таблицу, если её нет
     cur.execute("""
         CREATE TABLE IF NOT EXISTS reminders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,6 +18,14 @@ def init_db():
             is_sent INTEGER DEFAULT 0
         )
     """)
+    
+    # Пробуем добавить колонку repeat_type, если её ещё нет (для старых баз)
+    try:
+        cur.execute("ALTER TABLE reminders ADD COLUMN repeat_type TEXT DEFAULT 'once'")
+    except sqlite3.OperationalError:
+        # Колонка уже существует — ничего не делаем
+        pass
+    
     conn.commit()
     conn.close()
 
@@ -41,7 +51,6 @@ def get_reminders(user_id=None):
     return data
 
 def get_today_reminders(user_id):
-    """Получить напоминания на сегодня (для ежедневной рассылки)"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
