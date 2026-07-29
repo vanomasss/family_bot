@@ -198,6 +198,18 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
         return
 
 
+@dp.message(ReminderState.entering_text)
+async def process_text(message: types.Message, state: FSMContext):
+    # Сохраняем введенный текст в FSM
+    await state.update_data(text=message.text)
+    # Переводим пользователя на выбор времени
+    await state.set_state(ReminderState.entering_time)
+    await message.answer(
+        "⏰ Когда напомнить? Выбери вариант или введи время вручную:",
+        reply_markup=quick_time_menu()
+    )
+
+
 @dp.message(ReminderState.entering_time)
 async def process_time(message: types.Message, state: FSMContext):
     try:
