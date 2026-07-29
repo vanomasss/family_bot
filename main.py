@@ -200,9 +200,7 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
 
 @dp.message(ReminderState.entering_text)
 async def process_text(message: types.Message, state: FSMContext):
-    # Сохраняем введенный текст в FSM
     await state.update_data(text=message.text)
-    # Переводим пользователя на выбор времени
     await state.set_state(ReminderState.entering_time)
     await message.answer(
         "⏰ Когда напомнить? Выбери вариант или введи время вручную:",
@@ -224,7 +222,7 @@ async def process_time(message: types.Message, state: FSMContext):
             "🔄 Как часто напоминать?",
             reply_markup=repeat_menu()
         )
-    except:
+    except Exception:
         await message.answer(
             "❌ Неправильный формат. Напиши ЧЧ:ММ (например, 14:30)",
             reply_markup=back_button()
@@ -253,11 +251,11 @@ async def save_reminder(event, state):
     else:
         msg = f"✅ Напоминание для всех создано!\n\n📝 {text}\n⏰ {remind_time}\n{repeat_icon} Повтор: {repeat_emoji}"
 
-    # Безопасная отправка в зависимости от того, Callback это или Message
     if isinstance(event, types.CallbackQuery):
         await event.message.edit_text(msg, reply_markup=main_menu())
     else:
         await event.answer(msg, reply_markup=main_menu())
+
 
 async def send_daily_reminders():
     """Ежедневная рассылка в 08:00"""
@@ -275,48 +273,39 @@ async def send_daily_reminders():
 async def check_reminders():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     reminders = get_reminders()
-    
+
     for r in reminders:
         rem_id, user_id, text, remind_time, repeat_type = r
-        
-        # Сравниваем время как строки (формат одинаковый)
+
         if remind_time <= now:
-            # Отправляем уведомление
             if user_id is None:
                 for uid in FAMILY_IDS.values():
                     await bot.send_message(uid, f"⏰ НАПОМИНАНИЕ ВСЕМ:\n\n{text}")
             else:
                 await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
-            
-            # Обрабатываем повтор
+
+            conn = sqlite3.connect("reminders.db")
+            cur = conn.cursor()
+
             if repeat_type == "once":
                 mark_as_sent(rem_id)
             elif repeat_type == "daily":
-                # Переносим на следующий день
                 new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
-                conn = sqlite3.connect("reminders.db")
-                cur = conn.cursor()
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
                 conn.commit()
-                conn.close()
             elif repeat_type == "weekly":
-                # Переносим на неделю
                 new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M")
-                conn = sqlite3.connect("reminders.db")
-                cur = conn.cursor()
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
                 conn.commit()
-                conn.close()
-                
+
+            conn.close()
+
+
 async def main():
     init_db()
 
-    # Проверка напоминаний каждую минуту
     scheduler.add_job(check_reminders, "interval", minutes=1)
-
-    # Ежедневная рассылка в 08:00
     scheduler.add_job(send_daily_reminders, "cron", hour=8, minute=0)
-
     scheduler.start()
 
     print("🌟 Бот запущен!")
