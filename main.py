@@ -244,24 +244,20 @@ async def save_reminder(event, state):
     add_reminder(user_id, text, remind_time, repeat_type, created_by)
     await state.clear()
 
-    repeat_emoji = {"once": "однократное", "daily": "ежедневное", "weekly": "еженедельное"}.get(repeat_type,
-                                                                                                "однократное")
+    repeat_emoji = {"once": "однократное", "daily": "ежедневное", "weekly": "еженедельное"}.get(repeat_type, "однократное")
     repeat_icon = {"once": "🔹", "daily": "🔄", "weekly": "📆"}.get(repeat_type, "🔹")
 
     if user_id:
         name = FAMILY_NAMES.get(user_id, "Неизвестно")
-        msg = f"✅ Напоминание для {name} создано!\n\n" \
-              f"📝 {text}\n" \
-              f"⏰ {remind_time}\n" \
-              f"{repeat_icon} Повтор: {repeat_emoji}"
+        msg = f"✅ Напоминание для {name} создано!\n\n📝 {text}\n⏰ {remind_time}\n{repeat_icon} Повтор: {repeat_emoji}"
     else:
-        msg = f"✅ Напоминание для всех создано!\n\n" \
-              f"📝 {text}\n" \
-              f"⏰ {remind_time}\n" \
-              f"{repeat_icon} Повтор: {repeat_emoji}"
+        msg = f"✅ Напоминание для всех создано!\n\n📝 {text}\n⏰ {remind_time}\n{repeat_icon} Повтор: {repeat_emoji}"
 
-    await event.message.edit_text(msg, reply_markup=main_menu())
-
+    # Безопасная отправка в зависимости от того, Callback это или Message
+    if isinstance(event, types.CallbackQuery):
+        await event.message.edit_text(msg, reply_markup=main_menu())
+    else:
+        await event.answer(msg, reply_markup=main_menu())
 
 async def send_daily_reminders():
     """Ежедневная рассылка в 08:00"""
