@@ -1,5 +1,9 @@
+import os
 import asyncio
+import sqlite3
 from datetime import datetime, timedelta
+from aiohttp import web
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -202,7 +206,7 @@ async def process_text(message: types.Message, state: FSMContext):
     await state.update_data(text=message.text)
     await state.set_state(ReminderState.entering_time)
     await message.answer(
-        "⏰ Когда напомнить?",
+        "⏰ Когда напомнить? Выбери вариант или введи время вручную:",
         reply_markup=quick_time_menu()
     )
 
@@ -221,7 +225,7 @@ async def process_time(message: types.Message, state: FSMContext):
             "🔄 Как часто напоминать?",
             reply_markup=repeat_menu()
         )
-    except:
+    except Exception:
         await message.answer(
             "❌ Неправильный формат. Напиши ЧЧ:ММ (например, 14:30)",
             reply_markup=back_button()
@@ -241,23 +245,19 @@ async def save_reminder(event, state):
     add_reminder(user_id, text, remind_time, repeat_type, created_by)
     await state.clear()
 
-    repeat_emoji = {"once": "однократное", "daily": "ежедневное", "weekly": "еженедельное"}.get(repeat_type,
-                                                                                                "однократное")
+    repeat_emoji = {"once": "однократное", "daily": "ежедневное", "weekly": "еженедельное"}.get(repeat_type, "однократное")
     repeat_icon = {"once": "🔹", "daily": "🔄", "weekly": "📆"}.get(repeat_type, "🔹")
 
     if user_id:
         name = FAMILY_NAMES.get(user_id, "Неизвестно")
-        msg = f"✅ Напоминание для {name} создано!\n\n" \
-              f"📝 {text}\n" \
-              f"⏰ {remind_time}\n" \
-              f"{repeat_icon} Повтор: {repeat_emoji}"
+        msg = f"✅ Напоминание для {name} создано!\n\n📝 {text}\n⏰ {remind_time}\n{repeat_icon} Повтор: {repeat_emoji}"
     else:
-        msg = f"✅ Напоминание для всех создано!\n\n" \
-              f"📝 {text}\n" \
-              f"⏰ {remind_time}\n" \
-              f"{repeat_icon} Повтор: {repeat_emoji}"
+        msg = f"✅ Напоминание для всех создано!\n\n📝 {text}\n⏰ {remind_time}\n{repeat_icon} Повтор: {repeat_emoji}"
 
-    await event.message.edit_text(msg, reply_markup=main_menu())
+    if isinstance(event, types.CallbackQuery):
+        await event.message.edit_text(msg, reply_markup=main_menu())
+    else:
+        await event.answer(msg, reply_markup=main_menu())
 
 
 async def send_daily_reminders():
@@ -276,8 +276,10 @@ async def send_daily_reminders():
 async def check_reminders():
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     reminders = get_reminders()
+
     for r in reminders:
         rem_id, user_id, text, remind_time, repeat_type = r
+
         if remind_time <= now:
             if user_id is None:
                 for uid in FAMILY_IDS.values():
@@ -285,42 +287,57 @@ async def check_reminders():
             else:
                 await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
 
+            conn = sqlite3.connect("reminders.db")
+            cur = conn.cursor()
+
             if repeat_type == "once":
                 mark_as_sent(rem_id)
             elif repeat_type == "daily":
-                # Переносим на завтра
-                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime(
-                    "%Y-%m-%d %H:%M")
-                conn = sqlite3.connect("reminders.db")
-                cur = conn.cursor()
+                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
                 conn.commit()
-                conn.close()
             elif repeat_type == "weekly":
-                # Переносим на неделю
-                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(weeks=1)).strftime(
-                    "%Y-%m-%d %H:%M")
-                conn = sqlite3.connect("reminders.db")
-                cur = conn.cursor()
+                new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(weeks=1)).strftime("%Y-%m-%d %H:%M")
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
                 conn.commit()
-                conn.close()
+
+            conn.close()
 
 
+# --- ФЕЙКОВЫЙ ВЕБ-СЕРВЕР ДЛЯ RENDER ---
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
+
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    # Render сам выдает нужный порт через переменные окружения
+    port = int(os.environ.get("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Фейковый веб-сервер запущен на порту {port}")
+
+
+# --- ГЛАВНАЯ ТОЧКА ВХОДА ---
 async def main():
     init_db()
 
-    # Проверка напоминаний каждую минуту
+    # Запускаем планировщик
     scheduler.add_job(check_reminders, "interval", minutes=1)
-
-    # Ежедневная рассылка в 08:00
     scheduler.add_job(send_daily_reminders, "cron", hour=8, minute=0)
-
     scheduler.start()
+
+    # Запускаем веб-сервер
+    await start_web_server()
 
     print("🌟 Бот запущен!")
     print(f"⏰ Ежедневная рассылка в {DAILY_REMIND_TIME}")
 
+    # Запускаем поллинг бота
     await dp.start_polling(bot)
 
 

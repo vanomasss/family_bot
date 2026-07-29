@@ -1,8 +1,24 @@
 import sqlite3
+import os
 
 DB_NAME = "reminders.db"
 
 def init_db():
+    # Проверяем, существует ли база
+    if os.path.exists(DB_NAME):
+        # Проверяем, есть ли колонка repeat_type
+        conn = sqlite3.connect(DB_NAME)
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(reminders)")
+        columns = [col[1] for col in cur.fetchall()]
+        conn.close()
+        
+        # Если колонки нет — удаляем старую базу
+        if "repeat_type" not in columns:
+            os.remove(DB_NAME)
+            print("Старая база удалена, создаём новую...")
+    
+    # Создаём новую базу с правильной структурой
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -41,7 +57,6 @@ def get_reminders(user_id=None):
     return data
 
 def get_today_reminders(user_id):
-    """Получить напоминания на сегодня (для ежедневной рассылки)"""
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
