@@ -18,6 +18,9 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
+# Получаем ID семейного чата из переменных окружения Render
+FAMILY_CHAT_ID = os.getenv("FAMILY_CHAT_ID")
+
 
 class ReminderState(StatesGroup):
     choosing_recipient = State()
@@ -293,19 +296,30 @@ async def save_reminder(event, state):
 
 
 async def send_daily_reminders():
-    """Ежедневная рассылка в 08:00"""
-    for user_id in FAMILY_IDS.values():
-        reminders = get_today_reminders(user_id)
-        if reminders:
-            text = "☀️ Доброе утро! Сегодня у тебя запланировано:\n\n"
-            for r in reminders:
-                text += f"🔔 {r[1]} (в {r[2].split()[1]})\n"
-            await bot.send_message(user_id, text)
-        else:
-            await bot.send_message(user_id, "☀️ Доброе утро! На сегодня дел нет. Отдыхай! 😊")
+    """Ежедневная утренняя рассылка в семейный чат в 08:00"""
+    if not FAMILY_CHAT_ID:
+        return
+    
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    text = "☀️ Доброе утро, семья! План на сегодня:\n\n"
+    has_tasks = False
+    
+    for r in get_reminders():
+        rem_id, user_id, r_text, remind_time, repeat_type = r
+        if remind_time.startswith(today_str):
+            name = FAMILY_NAMES.get(user_id, "Общее") if user_id else "Всем"
+            time_part = remind_time.split()[1]
+            text += f"🔔 [{name}] {r_text} (в {time_part})\n"
+            has_tasks = True
+
+    if has_tasks:
+        await bot.send_message(FAMILY_CHAT_ID, text)
+    else:
+        await bot.send_message(FAMILY_CHAT_ID, "☀️ Доброе утро, семья! На сегодня запланированных дел нет. Отдыхаем! 😊")
 
 
 async def check_reminders():
+    """Проверка и отправка сработавших напоминаний в семейный чат"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     reminders = get_reminders()
 
@@ -313,11 +327,13 @@ async def check_reminders():
         rem_id, user_id, text, remind_time, repeat_type = r
 
         if remind_time <= now:
-            if user_id is None:
-                for uid in FAMILY_IDS.values():
-                    await bot.send_message(uid, f"⏰ НАПОМИНАНИЕ ВСЕМ:\n\n{text}")
-            else:
-                await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
+            recipient_name = FAMILY_NAMES.get(user_id, "всем") if user_id else "всем"
+            
+            if FAMILY_CHAT_ID:
+                await bot.send_message(
+                    FAMILY_CHAT_ID, 
+                    f"⏰ НАПОМИНАНИЕ для @{recipient_name}:\n\n{text}"
+                )
 
             conn = sqlite3.connect("reminders.db")
             cur = conn.cursor()
