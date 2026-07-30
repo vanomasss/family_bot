@@ -22,6 +22,7 @@ scheduler = AsyncIOScheduler()
 class ReminderState(StatesGroup):
     choosing_recipient = State()
     entering_text = State()
+    entering_date = State()
     entering_time = State()
     choosing_repeat = State()
 
@@ -49,12 +50,11 @@ def recipient_menu():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def quick_time_menu():
+def quick_date_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏰ Через 10 мин", callback_data="time_10")],
-        [InlineKeyboardButton(text="⏰ Через 30 мин", callback_data="time_30")],
-        [InlineKeyboardButton(text="⏰ Через 1 час", callback_data="time_60")],
-        [InlineKeyboardButton(text="⌨️ Ввести вручную", callback_data="time_manual")],
+        [InlineKeyboardButton(text="📅 Сегодня", callback_data="date_today")],
+        [InlineKeyboardButton(text="📅 Завтра", callback_data="date_tomorrow")],
+        [InlineKeyboardButton(text="⌨️ Ввести дату вручную (ДД.ММ)", callback_data="date_manual")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back")]
     ])
 
@@ -72,7 +72,7 @@ def repeat_menu():
 async def start(message: types.Message):
     await message.answer(
         f"🌟 Привет, {message.from_user.first_name}!\n\n"
-        f"Я — семейный напоминалка. Помогаю не забывать о важном! 📌\n\n"
+        f"Я — семейная напоминалка. Помогаю не забывать о важном! 📌\n\n"
         f"Выбери действие ниже ⬇️",
         reply_markup=main_menu()
     )
@@ -167,28 +167,27 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    if data.startswith("time_"):
-        if data == "time_10":
-            delta = 10
-        elif data == "time_30":
-            delta = 30
-        elif data == "time_60":
-            delta = 60
+    if data.startswith("date_"):
+        now = datetime.now()
+        if data == "date_today":
+            target_date = now.date()
+        elif data == "date_tomorrow":
+            target_date = (now + timedelta(days=1)).date()
         else:
             await callback.message.edit_text(
-                "⌨️ Напиши время в формате ЧЧ:ММ (например, 14:30)",
+                "⌨️ Введи дату в формате **ДД.ММ** (например, 15.08) или **ГГГГ-ММ-ДД**:",
+                parse_mode="Markdown",
                 reply_markup=back_button()
             )
-            await state.set_state(ReminderState.entering_time)
             await callback.answer()
             return
 
-        remind_time = (datetime.now() + timedelta(minutes=delta)).strftime("%Y-%m-%d %H:%M")
-        await state.update_data(remind_time=remind_time)
-        await state.set_state(ReminderState.choosing_repeat)
+        await state.update_data(target_date=target_date.strftime("%Y-%m-%d"))
+        await state.set_state(ReminderState.entering_time)
         await callback.message.edit_text(
-            "🔄 Как часто напоминать?",
-            reply_markup=repeat_menu()
+            "⏰ Теперь введи время в формате **ЧЧ:ММ** (например, 14:30):",
+            parse_mode="Markdown",
+            reply_markup=back_button()
         )
         await callback.answer()
         return
@@ -204,10 +203,41 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(ReminderState.entering_text)
 async def process_text(message: types.Message, state: FSMContext):
     await state.update_data(text=message.text)
+    await state.set_state(ReminderState.entering_date)
+    await message.answer(
+        "📅 На какую дату поставить напоминание?",
+        reply_markup=quick_date_menu()
+    )
+
+
+@dp.message(ReminderState.entering_date)
+async def process_date_manual(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    now = datetime.now()
+    target_date = None
+
+    for fmt in ("%d.%m", "%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+            year = parsed.year if parsed.year > 1900 else now.year
+            target_date = datetime(year, parsed.month, parsed.day).date()
+            break
+        except ValueError:
+            continue
+
+    if not target_date:
+        await message.answer(
+            "❌ Неверный формат даты. Попробуй еще раз (например, 15.08):",
+            reply_markup=back_button()
+        )
+        return
+
+    await state.update_data(target_date=target_date.strftime("%Y-%m-%d"))
     await state.set_state(ReminderState.entering_time)
     await message.answer(
-        "⏰ Когда напомнить? Выбери вариант или введи время вручную:",
-        reply_markup=quick_time_menu()
+        "⏰ Теперь введи время в формате **ЧЧ:ММ** (например, 14:30):",
+        parse_mode="Markdown",
+        reply_markup=back_button()
     )
 
 
@@ -215,10 +245,12 @@ async def process_text(message: types.Message, state: FSMContext):
 async def process_time(message: types.Message, state: FSMContext):
     try:
         dt = datetime.strptime(message.text.strip(), "%H:%M")
-        now = datetime.now()
-        remind_time = datetime(now.year, now.month, now.day, dt.hour, dt.minute)
-        if remind_time < now:
-            remind_time += timedelta(days=1)
+        data = await state.get_data()
+        target_date_str = data.get("target_date")
+        
+        target_date = datetime.strptime(target_date_str, "%Y-%m-%d")
+        remind_time = datetime(target_date.year, target_date.month, target_date.day, dt.hour, dt.minute)
+
         await state.update_data(remind_time=remind_time.strftime("%Y-%m-%d %H:%M"))
         await state.set_state(ReminderState.choosing_repeat)
         await message.answer(
@@ -227,7 +259,7 @@ async def process_time(message: types.Message, state: FSMContext):
         )
     except Exception:
         await message.answer(
-            "❌ Неправильный формат. Напиши ЧЧ:ММ (например, 14:30)",
+            "❌ Неправильный формат времени. Напиши ЧЧ:ММ (например, 14:30)",
             reply_markup=back_button()
         )
 
@@ -315,7 +347,6 @@ async def start_web_server():
     runner = web.AppRunner(app)
     await runner.setup()
 
-    # Render сам выдает нужный порт через переменные окружения
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
@@ -326,18 +357,15 @@ async def start_web_server():
 async def main():
     init_db()
 
-    # Запускаем планировщик
     scheduler.add_job(check_reminders, "interval", minutes=1)
     scheduler.add_job(send_daily_reminders, "cron", hour=8, minute=0)
     scheduler.start()
 
-    # Запускаем веб-сервер
     await start_web_server()
 
     print("🌟 Бот запущен!")
     print(f"⏰ Ежедневная рассылка в {DAILY_REMIND_TIME}")
 
-    # Запускаем поллинг бота
     await dp.start_polling(bot)
 
 
