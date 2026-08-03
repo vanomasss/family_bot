@@ -124,7 +124,7 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
             keyboard = []
             for r in reminders:
                 repeat_emoji = {"once": "🔹", "daily": "🔄", "weekly": "📆"}.get(r[3], "🔹")
-                text += f"{repeat_emoji} {r[1]} (до {r[2]})\n"
+                text += f"{repeat_emoji} #{r[0]} | {r[1]} (до {r[2]})\n"
                 keyboard.append([InlineKeyboardButton(
                     text=f"❌ Удалить #{r[0]}",
                     callback_data=f"delete_{r[0]}"
@@ -146,13 +146,19 @@ async def callback_handler(callback: types.CallbackQuery, state: FSMContext):
             )
         else:
             text = "👨‍👩‍👧‍👦 Все напоминания:\n\n"
+            keyboard = []
             for r in reminders:
-                name = FAMILY_NAMES.get(r[1], "Неизвестно")
-                repeat_emoji = {"once": "🔹", "daily": "🔄", "weekly": "📆"}.get(r[3], "🔹")
-                text += f"{repeat_emoji} {name}: {r[2]} (до {r[3]})\n"
+                name = FAMILY_NAMES.get(r[1], "Всем") if r[1] else "Всем"
+                repeat_emoji = {"once": "🔹", "daily": "🔄", "weekly": "📆"}.get(r[4], "🔹")
+                text += f"{repeat_emoji} #{r[0]} | {name}: {r[2]} (на {r[3]})\n"
+                keyboard.append([InlineKeyboardButton(
+                    text=f"❌ Удалить #{r[0]}",
+                    callback_data=f"delete_{r[0]}"
+                )])
+            keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back")])
             await callback.message.edit_text(
                 text,
-                reply_markup=main_menu()
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
             )
         await callback.answer()
         return
