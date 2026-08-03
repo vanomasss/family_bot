@@ -322,15 +322,23 @@ async def check_reminders():
         if remind_time <= now:
             if user_id is None:
                 for uid in FAMILY_IDS.values():
-                    await bot.send_message(uid, f"⏰ НАПОМИНАНИЕ ВСЕМ:\n\n{text}")
+                    try:
+                        await bot.send_message(uid, f"⏰ НАПОМИНАНИЕ ВСЕМ:\n\n{text}")
+                    except Exception:
+                        pass
             else:
-                await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
+                try:
+                    await bot.send_message(user_id, f"⏰ НАПОМИНАНИЕ:\n\n{text}")
+                except Exception:
+                    pass
 
             conn = sqlite3.connect("reminders.db")
             cur = conn.cursor()
 
             if repeat_type == "once":
-                mark_as_sent(rem_id)
+                # Сразу удаляем одноразовое напоминание из базы, чтобы не спамило
+                cur.execute("DELETE FROM reminders WHERE id = ?", (rem_id,))
+                conn.commit()
             elif repeat_type == "daily":
                 new_time = (datetime.strptime(remind_time, "%Y-%m-%d %H:%M") + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
                 cur.execute("UPDATE reminders SET remind_time = ?, is_sent = 0 WHERE id = ?", (new_time, rem_id))
