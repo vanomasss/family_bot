@@ -4,21 +4,17 @@ import os
 DB_NAME = "reminders.db"
 
 def init_db():
-    # Проверяем, существует ли база
     if os.path.exists(DB_NAME):
-        # Проверяем, есть ли колонка repeat_type
         conn = sqlite3.connect(DB_NAME)
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(reminders)")
         columns = [col[1] for col in cur.fetchall()]
         conn.close()
         
-        # Если колонки нет — удаляем старую базу
         if "repeat_type" not in columns:
             os.remove(DB_NAME)
             print("Старая база удалена, создаём новую...")
     
-    # Создаём новую базу с правильной структурой
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute("""
@@ -39,7 +35,7 @@ def add_reminder(user_id, text, remind_time, repeat_type, created_by):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO reminders (user_id, text, remind_time, repeat_type, created_by) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO reminders (user_id, text, remind_time, repeat_type, created_by, is_sent) VALUES (?, ?, ?, ?, ?, 0)",
         (user_id, text, remind_time, repeat_type, created_by)
     )
     conn.commit()
@@ -48,9 +44,10 @@ def add_reminder(user_id, text, remind_time, repeat_type, created_by):
 def get_reminders(user_id=None):
     conn = sqlite3.connect(DB_NAME)
     cur = conn.cursor()
-    if user_id:
+    if user_id is not None:
         cur.execute("SELECT id, text, remind_time, repeat_type FROM reminders WHERE user_id = ? AND is_sent = 0", (user_id,))
     else:
+        # Получаем абсолютно все активные напоминания для проверки планировщиком
         cur.execute("SELECT id, user_id, text, remind_time, repeat_type FROM reminders WHERE is_sent = 0")
     data = cur.fetchall()
     conn.close()
