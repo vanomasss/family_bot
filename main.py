@@ -12,7 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import TOKEN, FAMILY_IDS, FAMILY_NAMES, DAILY_REMIND_TIME
-from database import init_db, add_reminder, get_reminders, delete_reminder, mark_as_sent, get_today_reminders
+from database import init_db, add_reminder, get_reminders, delete_reminder, mark_as_sent
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -298,21 +298,8 @@ async def save_reminder(event, state):
         await event.answer(msg, reply_markup=main_menu())
 
 
-async def send_daily_reminders():
-    """Ежедневная утренняя рассылка в личные сообщения в 08:00"""
-    for user_id in FAMILY_IDS.values():
-        reminders = get_today_reminders(user_id)
-        if reminders:
-            text = "☀️ Доброе утро! Сегодня у тебя запланировано:\n\n"
-            for r in reminders:
-                text += f"🔔 {r[1]} (в {r[2].split()[1]})\n"
-            await bot.send_message(user_id, text)
-        else:
-            await bot.send_message(user_id, "☀️ Доброе утро! На сегодня дел нет. Отдыхай! 😊")
-
-
 async def check_reminders():
-    """Проверка и отправка сработавших напоминаний в личку"""
+    """Проверка и отправка сработавших напоминаний"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     reminders = get_reminders()
 
@@ -336,7 +323,7 @@ async def check_reminders():
             cur = conn.cursor()
 
             if repeat_type == "once":
-                # Сразу удаляем одноразовое напоминание из базы, чтобы не спамило
+                # Сразу удаляем одноразовое напоминание из базы
                 cur.execute("DELETE FROM reminders WHERE id = ?", (rem_id,))
                 conn.commit()
             elif repeat_type == "daily":
@@ -373,13 +360,11 @@ async def main():
     init_db()
 
     scheduler.add_job(check_reminders, "interval", minutes=1)
-    scheduler.add_job(send_daily_reminders, "cron", hour=8, minute=0)
     scheduler.start()
 
     await start_web_server()
 
     print("🌟 Бот запущен!")
-    print(f"⏰ Ежедневная рассылка в {DAILY_REMIND_TIME}")
 
     await dp.start_polling(bot)
 
